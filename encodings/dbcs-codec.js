@@ -1,6 +1,9 @@
 "use strict"
 var Buffer = require("safer-buffer").Buffer
 
+// Compatibility: Buffer.allocUnsafe is not available in Node < 4.5.0
+var bufferAllocUnsafe = typeof Buffer.allocUnsafe === "function" ? Buffer.allocUnsafe : Buffer.alloc
+
 // Multibyte codec. In this scheme, a character is represented by 1 or more bytes.
 // Our codec supports UTF-16 surrogates, extensions for GB18030 and unicode sequences.
 // To save memory and loading time, we read table files only when requested.
@@ -273,7 +276,7 @@ function DBCSEncoder (options, codec) {
 }
 
 DBCSEncoder.prototype.write = function (str) {
-  var newBuf = Buffer.alloc(str.length * (this.gb18030 ? 4 : 3))
+  var newBuf = bufferAllocUnsafe(str.length * (this.gb18030 ? 4 : 3))
   var leadSurrogate = this.leadSurrogate
   var seqObj = this.seqObj
   var nextChar = -1
@@ -433,7 +436,7 @@ function DBCSDecoder (options, codec) {
 }
 
 DBCSDecoder.prototype.write = function (buf) {
-  var newBuf = Buffer.alloc(buf.length * 2)
+  var newBuf = bufferAllocUnsafe(buf.length * 2)
   var nodeIdx = this.nodeIdx
   var prevBytes = this.prevBytes; var prevOffset = this.prevBytes.length
   var seqStart = -this.prevBytes.length // idx of the start of current parsed sequence.

@@ -1,6 +1,9 @@
 "use strict"
 var Buffer = require("safer-buffer").Buffer
 
+// Compatibility: Buffer.allocUnsafe is not available in Node < 4.5.0
+var bufferAllocUnsafe = typeof Buffer.allocUnsafe === "function" ? Buffer.allocUnsafe : Buffer.alloc
+
 // Note: UTF16-LE (or UCS2) codec is Node.js native. See encodings/internal.js
 
 // == UTF16-BE codec. ==========================================================
@@ -20,9 +23,25 @@ function Utf16BEEncoder () {
 
 Utf16BEEncoder.prototype.write = function (str) {
   var buf = Buffer.from(str, "ucs2")
-  for (var i = 0; i < buf.length; i += 2) {
+  var len = buf.length
+
+  // Swap bytes in-place with loop unrolling for better performance
+  var i = 0
+  var remainder = len % 8
+
+  // Process 8 bytes (4 characters) at a time
+  for (; i < len - remainder; i += 8) {
+    var tmp = buf[i]; buf[i] = buf[i + 1]; buf[i + 1] = tmp
+    tmp = buf[i + 2]; buf[i + 2] = buf[i + 3]; buf[i + 3] = tmp
+    tmp = buf[i + 4]; buf[i + 4] = buf[i + 5]; buf[i + 5] = tmp
+    tmp = buf[i + 6]; buf[i + 6] = buf[i + 7]; buf[i + 7] = tmp
+  }
+
+  // Process remaining bytes
+  for (; i < len; i += 2) {
     var tmp = buf[i]; buf[i] = buf[i + 1]; buf[i + 1] = tmp
   }
+
   return buf
 }
 
@@ -38,7 +57,7 @@ function Utf16BEDecoder () {
 Utf16BEDecoder.prototype.write = function (buf) {
   if (buf.length == 0) { return "" }
 
-  var buf2 = Buffer.alloc(buf.length + 1)
+  var buf2 = bufferAllocUnsafe(buf.length + 1)
   var i = 0; var j = 0
 
   if (this.overflowByte !== -1) {
@@ -47,12 +66,28 @@ Utf16BEDecoder.prototype.write = function (buf) {
     i = 1; j = 2
   }
 
-  for (; i < buf.length - 1; i += 2, j += 2) {
+  var len = buf.length
+  var remainder = (len - i - 1) % 8
+
+  // Process 8 bytes (4 characters) at a time
+  for (; i < len - 1 - remainder; i += 8, j += 8) {
+    buf2[j] = buf[i + 1]
+    buf2[j + 1] = buf[i]
+    buf2[j + 2] = buf[i + 3]
+    buf2[j + 3] = buf[i + 2]
+    buf2[j + 4] = buf[i + 5]
+    buf2[j + 5] = buf[i + 4]
+    buf2[j + 6] = buf[i + 7]
+    buf2[j + 7] = buf[i + 6]
+  }
+
+  // Process remaining bytes
+  for (; i < len - 1; i += 2, j += 2) {
     buf2[j] = buf[i + 1]
     buf2[j + 1] = buf[i]
   }
 
-  this.overflowByte = (i == buf.length - 1) ? buf[buf.length - 1] : -1
+  this.overflowByte = (i == len - 1) ? buf[len - 1] : -1
 
   return buf2.slice(0, j).toString("ucs2")
 }
